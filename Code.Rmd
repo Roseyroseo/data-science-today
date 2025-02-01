@@ -1,0 +1,860 @@
+---
+title: "The Current State of Data Science: Tools of the Trade, Compensation and Representation"
+authors: "Rosey Gutierrez and Jill Nomura"
+output: pdf_document
+date: "`2024-12-08`"
+---
+
+```{r setup, message=FALSE, warning=FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# install / load packages
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(tidyr)
+library(stringr)
+library(broom)
+library(knitr)
+library(purrr)
+library(moments)
+```
+by Rosey Gutierrez and Jill Nomura
+
+# I. Introduction
+
+As Data Science & Machine Learning evolves as one of the most dynamic and impactful domains in technology, we want to analyze trends and patterns using the 2020 Kaggle DS & ML Survey, which gathered responses from over 20,000 participants across 171 countries and territories. The survey provides information capturing the experiences, aspirations, and tools of individuals engaged in or aspiring to work within the data science ecosystem. 
+The survey methodology and flow logic, as well as a full breakdown of the questions (which can be used to asses missingness mechanisms as some questions were only asked to more experienced participants) can be found in the `supplementary_data` folder. 
+
+## Problem Description
+
+Our analysis focuses on answering key questions about the demographics, career choices, tools, and compensation of respondents, providing a comprehensive view of the current state of the field.
+
+Specifically, we aim to:
+
+  1. Explore the **distribution of age and gender across different roles** to understand representation in roles such as Data Scientist, Machine Learning Engineer, and Research Scientist.
+
+  2. Identify the **top careers among respondents** and examine how these vary based on geographic region.
+  
+ 3. Analyze the **most commonly used tools, programming languages, and products among data scientists** and compare these with the skills and tools that other respondents in the data most commonly use.
+ 
+  4. Investigate the **relationship between educational background and job compensation**, and assess whether salary can be predicted solely based on one’s level of education.
+  
+We wish to assess the **demographic distribution of respondents’ gender, and country of residence**, and critically evaluate whether the data science field is representative of the broader population. 
+
+```{r}
+# Load Dataset
+survey_data <- read.csv("survey_data.csv")
+
+```
+
+# II. Analysis
+
+## Questions
+
+### 1. What is the distribution of age and gender across different roles (e.g., Data Scientist, ML Engineer, Research Scientist, etc.)
+
+#### Methods
+
+To analyze the distribution of age and gender across different roles, we will begin by filtering the data to include only relevant columns: age, gender, and role. We will remove rows with missing or invalid entries in these columns to ensure the integrity of the analysis. Specifically, we will identify and exclude invalid entries in the role column, such as blank or whitespace-only values.
+
+Next, we will map the age data into pre-defined age groups (e.g., "18-21," "22-24") to enable categorical analysis. Any rows with unmatched or ambiguous age values will also be excluded.
+
+After cleaning the data, we will group the responses by role and calculate the total count for each gender and age group within each role. For gender, we will compute the proportion of each gender within each role and identify the gender with the highest proportion. Similarly, for age groups, we will calculate the proportion of responses for each age group within each role and determine the age group with the highest proportion.
+
+We will visualize the distributions for age and gender across roles for a better understanding of the differences. 
+
+#### Analysis
+```{r}
+```
+
+```{r}
+# Q1
+# Filter relevant columns
+filtered_data <- survey_data %>%
+  select(Age = Q1, Gender = Q2, Role = Q5) %>%
+  filter(!is.na(Age), !is.na(Gender), !is.na(Role))
+
+# Handle ambiguous or invalid Role data
+## Identify invalid Role entries (e.g., blank or whitespace-only values)
+invalid_roles <- filtered_data %>%
+  filter(Role == "" | grepl("^\\s*$", Role))
+
+# debugging
+#print("Invalid Role Entries:")
+#print(invalid_roles)
+
+## Remove rows with invalid Role entries
+cleaned_data <- filtered_data %>%
+  filter(Role != "" & !grepl("^\\s*$", Role))
+
+## Map Age to pre-defined groups for easier analysis
+age_mapping <- c("18-21" = "18-21", "22-24" = "22-24", "25-29" = "25-29", 
+                 "30-34" = "30-34", "35-39" = "35-39", "40-44" = "40-44", 
+                 "45-49" = "45-49", "50-54" = "50-54", "55-59" = "55-59", 
+                 "60-69" = "60-69", "70+" = "70+")
+
+cleaned_data <- cleaned_data %>%
+  mutate(Age_Group = recode(Age, !!!age_mapping, .default = NA_character_)) %>%
+  filter(!is.na(Age_Group)) 
+
+# Summarize data for Gender and Age_Group distributions
+role_gender_summary <- cleaned_data %>%
+  group_by(Role, Gender) %>%
+  summarise(Count = n(), .groups = "drop")
+
+role_age_summary <- cleaned_data %>%
+  group_by(Role, Age_Group) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Gender Distribution Summary
+gender_summary_table <- role_gender_summary %>%
+  group_by(Role) %>%
+  mutate(Proportion = Count / sum(Count)) %>%  
+  arrange(Role, desc(Count))  
+
+# Age Distribution Summary
+age_summary_table <- role_age_summary %>%
+  group_by(Role) %>%
+  mutate(Proportion = Count / sum(Count)) %>%  
+  arrange(Role, desc(Count))  
+# Gender with the Highest Proportion
+gender_summary <- role_gender_summary %>%
+  group_by(Role) %>%
+  mutate(Proportion = Count / sum(Count)) %>% 
+  slice_max(Proportion, n = 1) %>%  
+  select(Role, Gender, g_prop = Proportion)
+
+# Age Group with the Highest Proportion
+age_summary <- role_age_summary %>%
+  group_by(Role) %>%
+  mutate(Proportion = Count / sum(Count)) %>%  
+  slice_max(Proportion, n = 1) %>% 
+  select(Role, Age = Age_Group, a_prop = Proportion)
+
+# Combine Gender and Age summaries into a single table and display
+role_summary_table <- gender_summary %>%
+  left_join(age_summary, by = "Role")
+role_summary_table %>%
+  kable(
+    caption = "Distribution of Age and Gender among Industry Professionals")
+```
+
+```{r, out.width='50%', fig.show='hold'}
+
+# Create visualizations
+custom_colors <- c(
+  "Man" = "lightsteelblue",
+  "Woman" = "lightpink", 
+  "Nonbinary" = "thistle",  
+  "Prefer not to say" = "lemonchiffon2",  
+  "Prefer to self-describe" = "darkseagreen1"  
+)
+
+# Gender Distribution Bar Plot
+gender_plot <- ggplot(role_gender_summary, aes(x = Count, y = Role, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Gender Distribution Across Roles",
+    x = "Count",
+    y = "Role",
+    fill = "Gender"
+  ) +
+  scale_fill_manual(values = custom_colors)  # Apply custom colors
+
+# Convert Age to Numeric Midpoints
+age_midpoints <- c("18-21" = 19.5, "22-24" = 23, "25-29" = 27, "30-34" = 32,
+                   "35-39" = 37, "40-44" = 42, "45-49" = 47, "50-54" = 52,
+                   "55-59" = 57, "60-69" = 65, "70+" = 75)
+
+# Add a numeric column for age midpoints
+cleaned_data <- cleaned_data %>%
+  mutate(Age_Numeric = recode(Age_Group, !!!age_midpoints, .default = NA_real_))
+
+# Create Box Plots for Age Distribution
+age_boxplot <- ggplot(cleaned_data, aes(x = Age_Numeric, y = Role, fill = Role)) +
+  geom_boxplot(outlier.color = "black", outlier.size = 1.5) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Age Distribution Across Roles",
+    x = "Age",
+    y = "Role"
+  ) +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10) 
+  )
+
+# Display the plot
+print(age_boxplot)
+print(gender_plot)
+
+
+```
+```{r, out.width='25%', fig.show='hold'}
+#Extact question of interest
+Q1_data <- survey_data[-1, c("Q1", "Q2", "Q5")]
+#Drop role that is not a career role (exp student, other, Currently not employed)
+Q1_data <- subset(Q1_data, Q5 != "Student" & Q5!= "Other" & Q5 != "Currently not employed" & Q5 != "")
+
+#Find value counts of respondants per role
+value_counts <- table(Q1_data$Q5)
+value_counts_df <- as.data.frame(value_counts)
+colnames(value_counts_df) <- c("Role", "Count")
+value_counts_df <- value_counts_df[order(-value_counts_df$Count), ]
+prof_title_vector <-c(value_counts_df$Role)
+
+# Iterate through the vector and plot its distribution'
+skew_vector <- c()
+color_vector <- c("red", "blue", "green", "orange", "purple", "pink", "brown", "cyan", "yellow", "gray")
+
+
+for (i in 1:10) {
+  title = prof_title_vector[i]
+  title_df <- Q1_data[Q1_data$Q5 == title, ]
+  
+  histo <- ggplot(title_df, aes(x = Q1)) +
+  geom_bar(fill = color_vector[i], color = "black") +
+  labs(title = title, x = "Age Group", y = "Count") +
+  theme_minimal()
+  print(histo)
+  
+  frequencies <- table(title_df$Q1) 
+    
+  # Assign midpoints for each age group
+  midpoints <- c(19.5, 23, 27, 32, 37, 42, 47, 52, 57, 65, 75)
+  
+  # Expand the data
+  expanded_data <- rep(midpoints, times = frequencies)
+  
+  # Calculate skewness
+  skew <- skewness(expanded_data)
+  skew_vector<- c(skew_vector, skew)
+  
+}
+
+value_counts_df$'skewness_age' <- skew_vector
+#print(value_counts_df)
+
+```
+
+#### Conclusion
+
+Across every single role, men represent an overwhelming majority often comprising of 75% or more of the respondents in most occupations. Roles such as ML Engineer (85.8%) and Product Manager (87.1%) exhibit a particularly high male ratio. This trend is consistent across most roles, with the highest proportion of women observed in roles such as Statistician and Research Scientist, but even those proportions are below 25%.
+
+In terms of age distribution, the 25-29 age group consistently represents the largest proportion among most roles. Exceptions to this trend include Product/Project Managers, and Research Scientists, where the largest proportions shift to slightly older age groups such as 35–39 and 30–34, respectively. Database Engineers are tied for the age groups of 25-29 and 40-44 making it a more spread-out profession among age groups. Students are also very obviously overwhelmingly in the lowest 18-21 age-group. 
+Additionally, looking at the distribution of age across each role with its frequency yield interesting findings. These histograms are ordered by role, starting with the one with the highest count of respondents and ending with the one with the lowest. 
+According to the data, "Data Scientist" is the most common role, with 2,676 professionals represented in the survey, making it the red histogram. Conversely, "DBA/Database Engineer" is the least common role, with only 125 respondents, and is displayed as the gray histogram.
+Examining the histograms reveals a notable trend: a progression from right-skewed distributions to approximately normal distributions. A right-skewed distribution indicates that a role is in high demand, attracting a younger workforce eager to enter the field. In contrast, a more normal distribution suggests that the role is less in demand, with fewer new entrants required to meet the labor needs. This shift in distribution type serves as an indicator of current demand trends across roles.
+Aspiring students interested in data-related careers might benefit from focusing on roles with highly skewed distributions, as these are indicative of growing demand. Higher skewness magnitudes denote heavier skew. According to the analysis, the role with the highest skewness in age distribution is "Machine Learning Engineer," with a skewness value of 1.56.
+
+
+The analysis shows a very clear gender imbalance in the data science and machine learning fields, with men significantly outnumbering women and other genders in every role in the data. Moreover, the concentration of respondents in the 25–29 age group suggests that the field might be primarily populated by early-career professionals.
+
+### 2. What are the top careers among respondents, and how do they vary across region?
+
+#### Methods
+
+To analyze the distribution of career roles across regions and identify the most popular roles, we will take the Q5 and Q3 columns and rename them `Role` and `Region` respectively  and filter out any missing values. We will then group the data by `Region` and count the number of responses from each country, so that we can choose the top 20 in order to create a reasonable visualization. The 'Other' category will need to be excluded to focus on named regions. 
+
+For each region among the top 20 by respondents, we will group the data by `Role` and calculate the proportion of responses for each role relative to the total number of responses in that region.
+
+We will use a heatmap to compare the distribution of roles among regions, and identify the most popular role by region using a table. 
+
+#### Analysis
+
+.
+
+
+```{r}
+#Q2
+# Filter relevant data from the survey
+career_data <- survey_data %>%
+  select(
+    Role = Q5,                # Current or most recent role
+    Region = Q3               # Region or country
+  ) %>%
+  filter(!is.na(Role), !is.na(Region))
+
+# Clean data by removing blank or whitespace-only entries
+cleaned_data <- career_data %>%
+  filter(
+    Role != "" & !grepl("^\\s*$", Role),  
+    Region != "" & !grepl("^\\s*$", Region) 
+  )
+
+# Count the number of responses per country and select the top 15
+top_countries <- cleaned_data %>%
+  group_by(Region) %>%  
+  summarise(Count = n(), .groups = "drop") %>%  
+  arrange(desc(Count)) %>% 
+  slice_head(n = 20) 
+
+# Extract the names of the top 20 countries
+top_country_names <- top_countries$Region
+
+# Filter data for the top 20 countries and exclude 'Other'
+filtered_data <- cleaned_data %>%
+  filter(Region %in% top_country_names & Region != "Other")  # Keep only top 15 countries and exclude 'Other'
+
+# Summarize role distribution by top 20 countries
+region_role_summary_filtered <- filtered_data %>%
+  group_by(Region, Role) %>%
+  summarise(Count = n(), .groups = "drop") %>% 
+  group_by(Region) %>%
+  mutate(Proportion = Count / sum(Count)) 
+
+# Find the most popular role by region
+most_popular_role_by_region <- region_role_summary_filtered %>%
+  group_by(Region) %>%  
+  slice_max(Proportion, n = 1) %>%  # Select the row with the highest proportion
+  select(Region, Role, Proportion)  
+
+# Display the table
+most_popular_role_by_region %>%
+  kable(
+    caption = "Most Common Role among Respondents by Region")
+
+# Shorten Region names for readability in visualization
+region_role_summary_filtered <- region_role_summary_filtered %>%
+  mutate(
+    Region = str_trunc(Region, 15, side = "right", ellipsis = "..."),  
+    Role = str_trunc(Role, 20, side = "right", ellipsis = "...")       
+  )
+
+# Create heatmap for top 20 countries
+heatmap_plot_top_countries <- ggplot(region_role_summary_filtered, aes(x = Region, y = Role, fill = Proportion)) +
+  geom_tile(color = "white") +  
+  scale_fill_gradient(low = "mistyrose", high = "lightpink2") + 
+  theme_minimal(base_size = 14) +  
+  labs(
+    title = "Role Distribution by Region (Top 20)",
+    x = "Country",
+    y = "Role",
+    fill = "Proportion"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1),  
+    legend.position = "right" 
+  )
+print(heatmap_plot_top_countries)
+
+```
+
+
+#### Conclusion
+
+We can observe from the analysis that "Student" and "Data Scientist" are the two most prominent roles globally. Students are particularly dominant in regions such as China, India, Pakistan, and Indonesia, where it accounts for a substantial proportion of responses, with the highest proportion being in China (49.76%). This likely reflects the growing interest in data science and machine learning among students in these regions, quite possibly fueled by the increasing availability of educational resources and career opportunities.
+
+The "Data Scientist" role is more prominent in countries like Australia, Canada, France, Germany, UK, and the United States, where it consistently emerges as the most popular role. For example, in Canada, France, and Germany, the "Data Scientist" role accounts for approximately 19–25% of the responses. It might be reasonable to infer that  that these regions have a more established data science industry, with professionals actively pursuing careers as data scientists in these countries. 
+This is further evident from the heatmap also illustrating the diversity of roles across countries, with smaller proportions distributed across other roles, such as "Software Engineer", "Machine Learning Engineer", and "Research Scientist", particularly in regions with established technology industries like Germany, United States, and United Kingdom.
+
+The prevalence of students in emerging economies suggests a growing pipeline of future professionals, while the dominance of data scientist roles in developed economies highlights the maturity and demand of the field in these regions. The large student populations in some countries might indicate future change in who leads the industry should these regions invest in the industry and nurture their emerging professionals; or ultimately risk losing them to regions that will provide them with the opportunities to grow and contribute to the field.
+
+
+### 3. What are the most common tools, programming languages currently used by data scientist respondents? Is there a difference among tools used between Data Scientists compared to other roles?
+
+#### Methods
+
+In order to investigate what the most common tools, programming languages, and products used by data scientists we will filter the survey data to include relevant columns such as roles taken from `Q5`, programming languages taken from `Q7`, tools from `Q9_`, and cloud products from `Q26_` excluding all rows with missing data. 
+
+We'll then segment the data into two groups, 'Data Scientists' (those whose occupation was explicitly marked as Data Scientist) and 'All Other Respondents'. For each group we can then reshape the data to create a frequency table for count and proportion for each response.
+
+For visualization purposes, we will identify the top 20 most commonly used tools, languages and products for data scientists vs all other respondents. Then, in order to test whether data scientists use the same tools as all other respondents, we'll construct a contingency table of tool usage by group. We'll perform a chi-square test with Monte Carlo simulation (in order to avoid errors brought on by the small count values in some of the tools that might make the chi-squared test inaccurate) to determine if there's a statistically significant difference between the two groups.
+
+A p-value below 0.01 will lead us to reject the null hypothesis, indicating significant differences in tool usage patterns between data scientists and all other respondents. Otherwise, we will fail to reject the null hypothesis, suggesting similar tool usage.
+
+#### Analysis
+```{r}
+```
+
+```{r, out.width='50%', fig.show='hold'}
+# Q3
+# Function to clean and reshape data for analysis
+reshape_tools_group <- function(data, group_label) {
+  data %>%
+    pivot_longer(
+      cols = starts_with("Q"),  # Include all relevant columns (Q7, Q9, Q26_A)
+      names_to = "Category", 
+      values_to = "Response"
+    ) %>%
+    filter(!is.na(Response), Response != "None", Response != "") %>%  
+    group_by(Response) %>%
+    summarise(Count = n(), .groups = "drop") %>%
+    mutate(Proportion = Count / sum(Count)) %>%
+    arrange(desc(Proportion)) %>%
+    mutate(Group = group_label)
+}
+
+# Filter relevant data from the survey
+tools_languages_products_data <- survey_data %>%
+  select(
+    Role = Q5,                # Current or most recent role
+    starts_with("Q7_"),       # Programming languages
+    starts_with("Q9_"),       # Tools (e.g., IDEs)
+    starts_with("Q26_A_")     # Cloud products
+  ) %>%
+  filter(!is.na(Role))  
+
+# Segment data for data scientists and all other respondents
+data_scientists <- tools_languages_products_data %>%
+  filter(Role == "Data Scientist")  
+
+all_other_respondents <- tools_languages_products_data %>%
+  filter(Role != "Data Scientist")  
+
+# Reshape and summarize data for both groups
+tools_data_scientists <- reshape_tools_group(data_scientists, "Data Scientists")
+tools_all_others <- reshape_tools_group(all_other_respondents, "All Other Respondents")
+
+# Combine data for comparison
+comparison_data <- bind_rows(tools_data_scientists, tools_all_others)
+
+# Prepare contingency table for chi-square test
+contingency_table <- comparison_data %>%
+  group_by(Response, Group) %>%
+  summarise(Count = sum(Count), .groups = "drop") %>%
+  pivot_wider(
+    names_from = Group,
+    values_from = Count,
+    values_fill = 0  
+  ) %>%
+  as.data.frame()  
+
+# Convert the 'Response' column to row names
+rownames(contingency_table) <- contingency_table$Response 
+contingency_table <- contingency_table[, -1]  
+
+# Perform chi-square test with Monte Carlo simulation
+chi_square_result_sim <- chisq.test(contingency_table, simulate.p.value = TRUE, B = 10000)
+
+# Create bar plots for visualization
+# Top tools for data scientists
+tools_top20_data_scientists <- tools_data_scientists %>%
+  slice_max(Proportion, n = 20)
+
+top_employed_plot <- ggplot(tools_top20_data_scientists, aes(x = reorder(Response, Proportion), y = Proportion, fill = Response)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  coord_flip() +
+  labs(
+    title = "Top 20 Trade Tools among Data Scientists",
+    x = "Tool/Language/Product",
+    y = "Proportion"
+  ) +
+  theme_minimal()
+
+# Comparison plot between data scientists and all other respondents
+top_tools_languages_summary <- comparison_data %>%
+  group_by(Group) %>%
+  slice_max(Proportion, n = 20) %>%
+  ungroup()
+
+comparison_plot <- ggplot(top_tools_languages_summary, aes(x = reorder(Response, Proportion), y = Proportion, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(
+    title = "Top 20 Trade Tools Comparison: Data Scientists vs All Other Respondents",
+    x = "Tool/Language/Product",
+    y = "Proportion",
+    fill = "Group"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Data Scientists" = "lightblue2", 
+      "All Other Respondents" = "pink" 
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",  
+    legend.title = element_text(size = 12), 
+    legend.text = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5) 
+  )
+
+# Display results
+print("Chi-Square Test Results with Simulated P-Values:")
+print(chi_square_result_sim)
+
+if (chi_square_result_sim$p.value < 0.05) {
+  print("Reject the null: Data scientists use different tools compared to all other respondents.")
+} else {
+  print("Fail to reject the null: Data scientists use similar tools as all other respondents.")
+}
+
+print(top_employed_plot)
+print(comparison_plot)
+
+```
+
+
+#### Conclusion
+
+Based on our observations, the most commonly used tools among Data Scientists include Python, Jupyter Notebooks, SQL, R, and Visual Studio Code (VSCode), with Python emerging as the clear leader. These tools are heavily utilized for data analysis, coding, and machine learning tasks, highlighting their relevance to the daily responsibilities of data scientists. The bar plot illustrating the top 20 trade tools among data scientists highlights their strong preference for tools tailored to data manipulation, statistical analysis, and cloud computing, such as AWS and Google Cloud Platform.
+
+When comparing data scientists to respondents in other roles, we can find some significant differences in tool usage. The comparison plot indicates that while Python and Jupyter Notebooks dominate across groups, data scientists show a greater reliance on specialized statistical and machine learning tools like R and PyCharm. Conversely, other respondents display a more diverse usage pattern, including tools like C and MATLAB, which are less frequently used by data scientists.
+
+The chi-square test further confirms these distinctions, rejecting the null hypothesis that data scientists and other respondents use tools in similar proportions (p-value < 0.0001). This statistical evidence supports the observation that data scientists adopt tools that align with their analytical and modeling-focused workflows, differentiating them from other roles in the field.
+
+Our findings emphasize the unique technological preferences of data scientists compared to their peers in other roles, reflecting their specialized focus on data-driven tasks.
+
+###  4. What is the relationship between educational background and current job compensation? Is it possible to predict salary based on someone’s level of education alone?
+
+### Methods
+
+In order to analyze the relationship between education level and compensation, we'll start by selecting the relevant columns for Education (`Q4`) and Compensation (`Q24`). 
+
+Compensation in particular will need to be cleaned and standardized since respondents entered their income in different ways and encoding for symbols like $ dashes and commas might vary across regions. We will handle invalid UTF-8 encoding in the compensation column by replacing problematic characters with placeholders, non-numeric characters such as dollar signs, commas, and extra spaces will be removed, and non-standard dashes will be replaced with standard ones. Compensation ranges (e.g., "50,000–60,000") will be converted into numeric values by calculating their midpoint. Rows with invalid or non-parseable compensation values will be filtered out.
+
+We will also simplify Education levels into short categories to facilitate analysis.
+
+We'll start with some descriptive statistics so we can get some insights into the central tendencies and variability of compensation by education level. Then, we'll create some visualizations like a bar and box plots to show the distribution of salaries across education levels.
+
+By conducting an ANOVA test we'll determine whether the mean compensation differs across education levels, and a linear regression model will be used to asses whether education level can predict compensation. We'll then evaluate the model using Mean Absolute Error to measure its predictive performance. 
+
+### Analysis
+```{r message=FALSE, warning=FALSE, include = FALSE}
+
+# Q4
+# Select Relevant Columns
+education_salary_data <- survey_data %>%
+  select(Education = Q4, Compensation = Q24) %>%
+  filter(!is.na(Education), !is.na(Compensation))  # Remove rows with missing data
+
+# Clean UTF-8 Encoding
+education_salary_data <- education_salary_data %>%
+  mutate(
+    Compensation = iconv(Compensation, from = "UTF-8", to = "ASCII", sub = "?")  # Replace invalid UTF-8 with '?'
+  )
+
+# Identify Rows with Invalid Characters
+invalid_rows <- education_salary_data %>%
+  filter(str_detect(Compensation, "\\?"))
+
+# Clean the Compensation Column
+cleaned_data <- education_salary_data %>%
+  mutate(
+    Compensation = str_replace_all(Compensation, "[\\$,]", ""), 
+    Compensation = str_trim(Compensation),  
+    Compensation = str_replace_all(Compensation, "[–—]", "-"), 
+    Compensation = case_when(
+      # Handle ranges by calculating the midpoint
+      str_detect(Compensation, "-") ~ map_dbl(
+        str_split(Compensation, "-"),
+        ~ ifelse(all(!is.na(as.numeric(.))), mean(as.numeric(.), na.rm = TRUE), NA_real_)
+      ),
+      TRUE ~ as.numeric(Compensation)  
+    )
+  ) %>%
+  filter(!is.na(Compensation))
+
+# Simplify Education Levels
+cleaned_data <- cleaned_data %>%
+  mutate(
+    Education = str_replace_all(Education, "’", "'"), 
+    Education = case_when(
+      grepl("No formal education", Education) ~ "High School",
+      grepl("Some college", Education) ~ "Some College",
+      grepl("Bachelor's degree", Education) ~ "Bachelor's",
+      grepl("Master's degree", Education) ~ "Master's",
+      grepl("Doctoral degree", Education) ~ "Doctorate",
+      grepl("Professional degree", Education) ~ "Professional",
+      TRUE ~ "Other"
+    )
+  )
+
+# Summarize Data
+education_summary <- cleaned_data %>%
+  group_by(Education) %>%
+  summarise(
+    Mean_Salary = mean(Compensation, na.rm = TRUE),
+    Median_Salary = median(Compensation, na.rm = TRUE),
+    SD_Salary = sd(Compensation, na.rm = TRUE),
+    Count = n()
+  ) %>%
+  arrange(desc(Mean_Salary))
+
+```
+
+```{r, out.width='50%', fig.show='hold'}
+#Q4 Cont
+# Visualizations
+# Box Plot
+ggplot(cleaned_data, aes(x = Education, y = Compensation, fill = Education)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 200000)) +
+  theme_minimal() +
+  labs(
+    title = "Salary Distribution by Education Level",
+    x = "Education Level",
+    y = "Compensation (USD)"
+  )+
+  theme(
+    legend.position = "none",  
+    axis.text.x = element_text(angle = 30, hjust = 1) 
+  )
+
+# Bar Plot
+ggplot(education_summary, aes(x = reorder(Education, Mean_Salary), y = Mean_Salary, fill = Education)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Average Salary by Education Level",
+    x = "Education Level",
+    y = "Mean Salary (USD)"
+  )
+
+# ANOVA Test
+anova_result <- aov(Compensation ~ Education, data = cleaned_data)
+summary(anova_result)
+
+# Linear Regression
+lm_model <- lm(Compensation ~ Education, data = cleaned_data)
+#summary(lm_model)
+
+# Evaluate Regression Model
+predicted <- predict(lm_model, cleaned_data)
+mae <- mean(abs(predicted - cleaned_data$Compensation))
+
+print(paste("Mean Absolute Error (MAE):", mae))
+
+# Summarize the regression model using the broom package
+lm_summary <- tidy(lm_model)
+lm_summary %>%
+  kable(
+    caption = "Model Results: Relationship Between Education and Compensation",
+    col.names = c("Term", "Estimate", "Std. Error", "t-value", "p-value")
+  )
+
+
+```
+
+
+### Conclusion
+
+As we observe the relationship between Education and Compensation, the box plot reveals that compensation distributions do vary significantly by education level, with a higher range of salaries belonging to individuals with higher degrees of education like Doctoral and Master's degrees when compared to other education levels. The bar plot further emphasizes these differences by showcasing that individuals with Doctoral degrees far outperform everyone by earning the highest average salary (approximately \$58,000), followed by those with a master's degree (around \$45,000). In contrast, individuals with only a High School education or "Other" qualifications tend to have the lowest average salaries. The average compensation seems low due to how the income values were aggregated (midpoint between income ranges) but the overall patterns are preserved. 
+
+The ANOVA results confirm that educational background has a statistically significant impact on compensation (p-value < 2e-16), indicating differences in mean compensation across education levels. This is further supported by the linear regression results, which show that holding a doctoral degree is associated with a significant increase in compensation compared to the baseline (bachelor's degree), while other education levels, such as "Professional" and "Some College," have smaller but still statistically significant effects. Notably, individuals with only a high school education do not exhibit a statistically significant difference in compensation compared to those with a bachelor’s degree.
+
+Despite the significance of education in predicting compensation, the regression model explains only a small portion of the variance in compensation (adjusted $R^2$ = 2.83%). This low $R^2$ value, combined with a high mean absolute error (MAE = \$40,861), suggests that while education level does contribute to compensation differences, other factors such as industry, job role, location, or experience likely play a more substantial role in determining salaries.
+
+In summary, education is an important but limited predictor of compensation. Advanced degrees, particularly doctoral and master’s degrees, are associated with higher earnings, but further factors need to be taken into account to better explain the variability in compensation.
+
+
+
+# III. Advanced Analysis
+
+### What is the distribution of respondents’ gender, and country of residence? Is the data science field representative of the overall population? Would this have any consequence?
+
+#### Methods
+
+To examine the distribution of respondent's age and gender and compare them to the population at large we obtained a `world_population.csv` file containing the population for each country for several years. Since the survey was conducted in 2020 we focused on the Year 2020 column in order to compare the representation by region for survey takers and the population at large. 
+
+As far as gender goes, since most countries have a female share of the population between 49 and 51 percent (within one percentage point of an equal share of men and women), we decided to split global male and female ratios evenly, allocating 4 percent of the overall global population to other genders like nonbinary, trans etc in order to offer some degree of representation. The exact figure is hard to measure given that this metric has not been formally investigated, so we wanted to at least give it some consideration while not affecting the female /male ratio, and the overall results given current gender parity.
+
+We will extract and merge the relevant columns from the survey and the world population data, filter out rows with missing or invalid data, and standardize country names so that we can merge appropriately.
+
+We'll create visualizations and numerical summaries to compare the distributions if they are significant. 
+
+#### Analysis
+
+.
+
+```{r, message=FALSE, warning=FALSE, include = FALSE}
+# Load the world population data 
+world_population <- read_csv("world_population.csv", show_col_types = FALSE)
+
+```
+
+```{r gender_representation_plot, fig.height=4, out.width='80%', echo=FALSE}
+
+# Advanced Analysis
+# Process Survey Data
+# Select relevant columns and filter out null or blank countries
+survey_clean <- survey_data %>%
+  select(
+    Age = Q1,
+    Gender = Q2,
+    Country = Q3
+  ) %>%
+  filter(!is.na(Age), !is.na(Gender), !is.na(Country), Country != "", Country != "In which country do you currently reside?")  # Remove invalid rows
+
+# Standardize country names in the survey data
+survey_clean <- survey_clean %>%
+  mutate(
+    Country = case_when(
+      Country == "United Kingdom of Great Britain and Northern Ireland" ~ "United Kingdom",
+      Country == "United States of America" ~ "United States",
+      Country == "Republic of Korea" ~ "South Korea",
+      Country == "Viet Nam" ~ "Vietnam",
+      Country == "Iran, Islamic Republic of..." ~ "Iran",
+      TRUE ~ Country  # Keep other names as is
+    )
+  )
+
+# Clean Gender
+survey_clean <- survey_clean %>%
+  mutate(
+    Gender = case_when(
+      Gender == "Man" ~ "Male",
+      Gender == "Woman" ~ "Female",
+      TRUE ~ "Other"
+    )
+  )
+
+# Summarize the survey data by country
+survey_summary <- survey_clean %>%
+  group_by(Country) %>%
+  summarise(
+    Respondents = n(),
+    Gender_Distribution = list(table(Gender))
+  )
+
+# Process World Population Data
+# Select and clean relevant columns
+world_clean <- world_population %>%
+  select(Country = `Country/Territory`, Population_2020 = `2020 Population`, World_Percentage = `World Population Percentage`)
+
+# Merge survey and world population data
+merged_data <- survey_summary %>%
+  left_join(world_clean, by = "Country") %>%
+  mutate(
+    Survey_Percentage = Respondents / sum(Respondents) * 100
+  ) %>%
+  filter(!is.na(World_Percentage))  # Drop rows with no match in world data
+
+# Gender Representation
+# Calculate total number of survey respondents
+total_respondents <- nrow(survey_clean)
+
+# Calculate survey gender proportions based on total respondents
+gender_summary <- survey_clean %>%
+  group_by(Gender) %>%
+  summarise(
+    Count = n(),
+    Proportion = Count / total_respondents * 100  # Proportion relative to total respondents
+  ) %>%
+  mutate(Source = "Survey")  # Add a column for the source of data
+
+# Add global gender proportions
+global_gender <- data.frame(
+  Gender = c("Male", "Female", "Other"),
+  Count = c(NA, NA, NA),  # Placeholder for counts
+  Proportion = c(48, 48, 4),  # Assumed global proportions
+  Source = "Global"  # Add a source column
+)
+
+# Combine survey and global gender data
+gender_comparison <- bind_rows(gender_summary, global_gender)
+
+# Create gender comparison bar plot
+ggplot(gender_comparison, aes(x = Gender, y = Proportion, fill = Source)) +
+  geom_bar(stat = "identity", position = "dodge", color = "black") +
+  labs(
+    title = "Gender Representation: Survey vs. Global",
+    x = "Gender",
+    y = "Proportion (%)",
+    fill = "Source"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5)   # Center align the plot title
+  )+
+  scale_y_continuous(labels = scales::percent_format(scale = 1) # Adjust y-axis to percentage format
+  ) + 
+  scale_fill_manual(
+    values = c(
+      "Survey" = "lavender",   # Custom color for Survey
+      "Global" = "lightblue1"      # Custom color for Global
+    )
+  )
+
+# Align Survey and Global data for comparison
+gender_disparity <- gender_comparison %>%
+  group_by(Gender) %>%
+  summarise(
+    Survey = sum(Proportion[Source == "Survey"], na.rm = TRUE),
+    Global = sum(Proportion[Source == "Global"], na.rm = TRUE)
+  ) %>%
+  mutate(
+    Absolute_Difference = abs(Survey - Global),
+    Percentage_Difference = (Survey - Global) / Global * 100
+  )
+
+# Display the gender disparity table
+gender_disparity_table <- gender_disparity %>%
+  select(Gender, Survey, Global, Absolute_Difference, Percentage_Difference)
+
+# Print the table for reference
+gender_disparity_table %>%
+  kable(
+    caption = "Numerical Analysis of Gender Representation Disparities",
+    col.names = c("Gender", "Survey Proportion (%)", "Global Proportion (%)", 
+                  "Absolute Difference (%)", "Percentage Difference (%)"),
+    digits = 2
+  )
+
+# Highlight key differences in the analysis
+#print(gender_disparity_table)
+    
+```
+
+```{r regional_representation_plot, fig.height=10, out.width='100%', echo=FALSE}
+
+# Visualization: Regional Representation
+ggplot(merged_data, aes(x = reorder(Country, -Survey_Percentage), y = Survey_Percentage, fill = World_Percentage)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    title = "Regional Representation of Survey Respondents",
+    x = "Country",
+    y = "Survey Respondent Percentage",
+    fill = "World Population %"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),  # Ensure axis labels remain horizontal
+    legend.position = "bottom",  # Move legend to the bottom
+    legend.title = element_text(size = 12),  # Adjust legend title size
+    legend.text = element_text(size = 10),   # Adjust legend text size
+    plot.title = element_text(hjust = 0.5)   # Center align the plot title
+  ) +
+  guides(fill = guide_legend(nrow = 1)  # Arrange legend in a single row
+  ) +
+  scale_fill_gradient(low = "lavenderblush2", high = "lightpink2")  # Custom gradient colors for the legend
+
+```
+
+
+
+#### Conclusion
+
+The analysis of survey respondents' demographics highlights a significant disparity between the representation of genders and global population distributions. Based on the survey data, males constitute 78.8% of respondents, a figure that far exceeds the assumed global gender balance of 48%. Females, who represent an estimated 48% of the global population, account for only 19.36% of survey respondents—highlighting major underrepresentation. Gender non-conforming individuals identifying as "Other" are underrepresented as well, comprising only 1.84% of survey respondents compared to the assumed global figure of only 4%.
+
+This gender imbalance is further reinforced by the numerical analysis, which reveals a 64.17% overrepresentation of males and a -59.68% underrepresentation of females in the survey. Such disparities align with broader trends discussed in studies, such as the underrepresentation of women and nonbinary individuals in STEM fields, particularly data science and related technical disciplines. Articles from MIT Professional Programs emphasize systemic barriers, including cultural stereotypes, unequal access to resources, and biases in hiring practices, which may explain these trends.[1]
+
+Additionally, the regional representation plot underscores that the majority of respondents hail from countries like India, the United States, and Brazil, while many regions, particularly in Africa and smaller nations globally, remain grossly underrepresented. This concentration of respondents from select regions could limit the survey’s ability to provide insights into the global data science workforce and its inclusivity.
+
+In conclusion, the underrepresentation of females and gender non-conforming in the survey reflects persistent gender disparities in data science, which could have significant implications for equity and innovation in the field as well as persisting biases in models that will fail to account for real world data given the limited scope of the developer workforce.[2] Addressing these gaps requires targeted efforts to foster greater inclusivity through outreach, mentorship, and systemic changes to reduce barriers to entry for underrepresented groups. Improving regional diversity in survey participation could help capture a more comprehensive picture of the global data science workforce.
+
+
+# IV. Conclusion / Discussion
+
+Our report has explored various facets of the data science profession, aiming to understand its current state, representation, and disparities, as well as its broader implications. By analyzing survey data and comparing it to global population benchmarks, we addressed multiple questions and uncovered critical insights into the demographics, tools, compensation, and regional representation of data science professionals.
+
+Data scientists predominantly rely on Python, SQL, and Jupyter-based tools, reflecting the field's focus on programming and statistical analysis. However, when compared to the broader survey population, data scientists exhibit a distinct preference for domain-specific tools like R and Jupyter, with statistically significant differences confirmed via a chi-squared test. This underscores the specialized nature of data science and its reliance on technical expertise.
+
+Educational background has a measurable impact on compensation, with individuals holding doctorates earning significantly higher salaries compared to those with other degrees. Despite a statistically significant relationship between education level and compensation (as shown by ANOVA results), the linear regression model demonstrated only modest predictive power, suggesting that other factors, such as experience, industry, and geographic location, likely play critical roles.
+
+ Our analysis revealed significant disparities in the demographics of survey respondents compared to global population data. Males overwhelmingly dominate the data science field (78.8%), while females (19.36%) and gender non-conforming individuals (1.84%) are underrepresented. This is a stark contrast to the global gender distribution of 48% male, 48% female, and our hypothetical 4% of gender non-conforming individuals. Moreover, regional representation is concentrated in a few countries like India and the United States, while many regions, particularly in Africa and smaller nations, are significantly underrepresented. These disparities highlight systemic barriers that limit inclusivity and diversity within data science and pose developmental risks and bias permanence and normalization.
+ 
+The gender and regional imbalances observed have far-reaching consequences. The lack of representation of women and nonbinary individuals in data science may hinder innovation by excluding diverse perspectives. Similarly, regional disparities suggest unequal access to data science opportunities, which could perpetuate global inequities in technological advancement. Addressing these gaps will require targeted interventions, including educational outreach, mentorship programs, and systemic changes in hiring and training practices.
+
+In conclusion,  while the field of data science continues to grow and innovate, it is evident that it has not yet achieved equitable representation across genders, regions, and socio-economic backgrounds. The tools and compensation analysis reflects the technical depth and financial potential of the profession, but the demographic disparities raise important questions about inclusivity, and bring into question the reliability of developed technology where such obvious biases endure. To ensure that data science evolves as a globally representative and inclusive field, stakeholders must commit to reducing barriers, fostering diversity, and investing in underrepresented communities. These actions will not only promote fairness but also enhance the field’s ability to solve complex, global challenges, and better capture the world we live in.
+
+# Appendix
+
+  [1] [The Gender Gap in STEM: Still Gaping in 2023 - MIT.edu](https://professionalprograms.mit.edu/blog/leadership/the-gender-gap-in-stem/)
+  
+  [2] [Bias and fairness in machine learning and artificial intelligence](https://doi.org/10.1016/B978-0-12-821392-6.00006-6)
